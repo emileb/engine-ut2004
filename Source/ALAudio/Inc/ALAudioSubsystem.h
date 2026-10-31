@@ -88,6 +88,10 @@ typedef ALenum (*EAXGet)(const GUID*, ALuint, ALuint, ALvoid*, ALuint);
 #elif MACOSX
 #define AL_DLL TEXT("./openal.dylib")
 #define AL_DEFAULT_DLL TEXT("./openal.dylib")
+#elif defined(UE_OPENTOUCH)
+// The app's openal-soft, already loaded by the launcher.
+#define AL_DLL TEXT("libopenal-soft.so")
+#define AL_DEFAULT_DLL TEXT("libopenal-soft.so")
 #else
 // AL_DLL is the OpenAL Soft built with the engine (beside the binary); the fallback is the system's.
 #define AL_DLL TEXT("libopenal.so")

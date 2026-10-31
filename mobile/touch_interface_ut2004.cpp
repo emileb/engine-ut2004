@@ -1,0 +1,442 @@
+//
+// UT2004's touch control layout, from UT99's (Sigma Touch).
+//
+
+#include "touch_interface.h"
+#include "SDL_keycode.h"
+
+#include <dlfcn.h>
+#include <GLES2/gl2.h>
+
+extern int mobile_screen_width;
+extern int mobile_screen_height;
+
+extern "C" void gl4es_flush();
+extern "C" void UT2004_TouchFrame();
+
+// The overlay draws with the device's GLES while the engine's gl4es caches that state, so the state it changes is
+// put back afterwards. The calls go to libGLESv2.so: inside this library gl* are gl4es.
+namespace
+{
+struct FGles
+{
+    void (*GetIntegerv)(GLenum, GLint *);
+    GLboolean (*IsEnabled)(GLenum);
+    void (*Enable)(GLenum);
+    void (*Disable)(GLenum);
+    void (*UseProgram)(GLuint);
+    void (*ActiveTexture)(GLenum);
+    void (*BindTexture)(GLenum, GLuint);
+    void (*BindBuffer)(GLenum, GLuint);
+    void (*BlendFuncSeparate)(GLenum, GLenum, GLenum, GLenum);
+    void (*BlendEquationSeparate)(GLenum, GLenum);
+    void (*Viewport)(GLint, GLint, GLsizei, GLsizei);
+    void (*Scissor)(GLint, GLint, GLsizei, GLsizei);
+    void (*GetVertexAttribiv)(GLuint, GLenum, GLint *);
+    void (*GetVertexAttribPointerv)(GLuint, GLenum, void **);
+    void (*VertexAttribPointer)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
+    void (*EnableVertexAttribArray)(GLuint);
+    void (*DisableVertexAttribArray)(GLuint);
+    bool ok;
+};
+
+FGles gles;
+
+bool loadGles()
+{
+    static bool tried = false;
+    if (tried)
+        return gles.ok;
+    tried = true;
+    void *lib = dlopen("libGLESv2.so", RTLD_NOW);
+    if (!lib)
+        return false;
+#define GLES_FN(f) *(void **)&gles.f = dlsym(lib, "gl" #f); if (!gles.f) return false;
+    GLES_FN(GetIntegerv) GLES_FN(IsEnabled) GLES_FN(Enable) GLES_FN(Disable) GLES_FN(UseProgram)
+    GLES_FN(ActiveTexture) GLES_FN(BindTexture) GLES_FN(BindBuffer) GLES_FN(BlendFuncSeparate)
+    GLES_FN(BlendEquationSeparate) GLES_FN(Viewport) GLES_FN(Scissor) GLES_FN(GetVertexAttribiv)
+    GLES_FN(GetVertexAttribPointerv) GLES_FN(VertexAttribPointer) GLES_FN(EnableVertexAttribArray)
+    GLES_FN(DisableVertexAttribArray)
+#undef GLES_FN
+    gles.ok = true;
+    return true;
+}
+
+const int MAX_ATTRIBS = 16;
+
+struct FAttrib
+{
+    GLint enabled, size, type, normalized, stride, buffer;
+    void *pointer;
+};
+
+struct FSavedState
+{
+    GLint program, activeTexture, texture0, arrayBuffer, elementBuffer;
+    GLint blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha, blendEqRGB, blendEqAlpha;
+    GLboolean blend, cull, depth, scissor;
+    GLint viewport[4], scissorBox[4];
+    GLint numAttribs;
+    FAttrib attribs[MAX_ATTRIBS];
+};
+
+FSavedState saved;
+bool stateSaved = false;
+
+void saveState()
+{
+    FSavedState &s = saved;
+    gles.GetIntegerv(GL_CURRENT_PROGRAM, &s.program);
+    gles.GetIntegerv(GL_ACTIVE_TEXTURE, &s.activeTexture);
+    gles.ActiveTexture(GL_TEXTURE0);
+    gles.GetIntegerv(GL_TEXTURE_BINDING_2D, &s.texture0);
+    gles.GetIntegerv(GL_ARRAY_BUFFER_BINDING, &s.arrayBuffer);
+    gles.GetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &s.elementBuffer);
+    gles.GetIntegerv(GL_BLEND_SRC_RGB, &s.blendSrcRGB);
+    gles.GetIntegerv(GL_BLEND_DST_RGB, &s.blendDstRGB);
+    gles.GetIntegerv(GL_BLEND_SRC_ALPHA, &s.blendSrcAlpha);
+    gles.GetIntegerv(GL_BLEND_DST_ALPHA, &s.blendDstAlpha);
+    gles.GetIntegerv(GL_BLEND_EQUATION_RGB, &s.blendEqRGB);
+    gles.GetIntegerv(GL_BLEND_EQUATION_ALPHA, &s.blendEqAlpha);
+    s.blend = gles.IsEnabled(GL_BLEND);
+    s.cull = gles.IsEnabled(GL_CULL_FACE);
+    s.depth = gles.IsEnabled(GL_DEPTH_TEST);
+    s.scissor = gles.IsEnabled(GL_SCISSOR_TEST);
+    gles.GetIntegerv(GL_VIEWPORT, s.viewport);
+    gles.GetIntegerv(GL_SCISSOR_BOX, s.scissorBox);
+    gles.GetIntegerv(GL_MAX_VERTEX_ATTRIBS, &s.numAttribs);
+    if (s.numAttribs > MAX_ATTRIBS)
+        s.numAttribs = MAX_ATTRIBS;
+    for (int i = 0; i < s.numAttribs; i++)
+    {
+        FAttrib &a = s.attribs[i];
+        gles.GetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &a.enabled);
+        gles.GetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_SIZE, &a.size);
+        gles.GetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_TYPE, &a.type);
+        gles.GetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, &a.normalized);
+        gles.GetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &a.stride);
+        gles.GetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &a.buffer);
+        gles.GetVertexAttribPointerv(i, GL_VERTEX_ATTRIB_ARRAY_POINTER, &a.pointer);
+    }
+}
+
+void setEnabled(GLenum cap, GLboolean on)
+{
+    if (on)
+        gles.Enable(cap);
+    else
+        gles.Disable(cap);
+}
+
+void restoreState()
+{
+    const FSavedState &s = saved;
+    for (int i = 0; i < s.numAttribs; i++)
+    {
+        const FAttrib &a = s.attribs[i];
+        gles.BindBuffer(GL_ARRAY_BUFFER, a.buffer);
+        gles.VertexAttribPointer(i, a.size, a.type, a.normalized, a.stride, a.pointer);
+        if (a.enabled)
+            gles.EnableVertexAttribArray(i);
+        else
+            gles.DisableVertexAttribArray(i);
+    }
+    gles.BindBuffer(GL_ARRAY_BUFFER, s.arrayBuffer);
+    gles.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, s.elementBuffer);
+    gles.UseProgram(s.program);
+    gles.ActiveTexture(GL_TEXTURE0);
+    gles.BindTexture(GL_TEXTURE_2D, s.texture0);
+    gles.ActiveTexture(s.activeTexture);
+    gles.BlendFuncSeparate(s.blendSrcRGB, s.blendDstRGB, s.blendSrcAlpha, s.blendDstAlpha);
+    gles.BlendEquationSeparate(s.blendEqRGB, s.blendEqAlpha);
+    setEnabled(GL_BLEND, s.blend);
+    setEnabled(GL_CULL_FACE, s.cull);
+    setEnabled(GL_DEPTH_TEST, s.depth);
+    setEnabled(GL_SCISSOR_TEST, s.scissor);
+    gles.Viewport(s.viewport[0], s.viewport[1], s.viewport[2], s.viewport[3]);
+    gles.Scissor(s.scissorBox[0], s.scissorBox[1], s.scissorBox[2], s.scissorBox[3]);
+}
+}
+
+void TouchInterface::openGLStart()
+{
+    // gl4es may still hold the frame's last draws.
+    gl4es_flush();
+    stateSaved = loadGles();
+    if (stateSaved)
+        saveState();
+    touchcontrols::gl_startRender();
+};
+
+void TouchInterface::openGLEnd()
+{
+    touchcontrols::gl_endRender();
+    if (stateSaved)
+        restoreState();
+};
+
+void TouchInterface::mouseMove(int action, float x, float y, float mouse_x, float mouse_y)
+{
+    // Direct pointer: the cursor goes to the finger, and the finger is the left button.
+    MouseMoveAbsolute(x * mobile_screen_width, y * mobile_screen_height);
+    if(action == TOUCHMOUSE_DOWN)
+        MouseButton(1, BUTTON_PRIMARY);
+    else if(action == TOUCHMOUSE_UP)
+        MouseButton(0, BUTTON_PRIMARY);
+}
+
+void TouchInterface::createControls(std::string filesPath)
+{
+    tcMenuMain = new touchcontrols::TouchControls("menu", false, true, 10, false);
+    tcYesNo = new touchcontrols::TouchControls("yes_no", false, false);
+    tcGameMain = new touchcontrols::TouchControls("game", false, true, 1, true);
+    tcGameWeapons = new touchcontrols::TouchControls("weapons", false, true, 1, false);
+    tcInventory = new touchcontrols::TouchControls("inventory", false, true, 2, false); //Different edit group
+    tcWeaponWheel = new touchcontrols::TouchControls("weapon_wheel", false, true, 1, false);
+    tcBlank = new touchcontrols::TouchControls("blank", true, false);
+    tcCustomButtons = new touchcontrols::TouchControls("custom_buttons", false, true, 1, true);
+    tcKeyboard = new touchcontrols::TouchControls("keyboard", false, false);
+    tcGamepadUtility = new touchcontrols::TouchControls("gamepad_utility", false, false);
+    tcDPadInventory = new touchcontrols::TouchControls("dpad_inventory", false, false);
+    tcMouse = new touchcontrols::TouchControls("mouse", false, false);
+    // Hide the cog because when using the gamepad and weapon wheel is enabled, the cog will show otherwise
+    tcWeaponWheel->hideEditButton = true;
+
+    //Menu -------------------------------------------
+    //------------------------------------------------------
+    tcMenuMain->addControl(new touchcontrols::Button("back", touchcontrols::RectF(0, 0, 2, 2), "back_button", KEY_BACK_BUTTON));
+    tcMenuMain->addControl(new touchcontrols::Button("keyboard", touchcontrols::RectF(18, 0, 20, 2), "keyboard", KEY_SHOW_KBRD));
+    tcMenuMain->addControl(new touchcontrols::Button("gamepad", touchcontrols::RectF(22, 0, 24, 2), "gamepad", KEY_SHOW_GAMEPAD));
+    tcMenuMain->addControl(new touchcontrols::Button("gyro", touchcontrols::RectF(24, 0, 26, 2), "gyro", KEY_SHOW_GYRO));
+    tcMenuMain->addControl(new touchcontrols::Button("load_save_touch", touchcontrols::RectF(20, 0, 22, 2), "touchscreen_save", KEY_LOAD_SAVE_CONTROLS));
+
+    touchcontrols::Mouse *brightnessSlide = new touchcontrols::Mouse("slide_mouse", touchcontrols::RectF(24, 3, 26, 11), "brightness_slider");
+    brightnessSlide->signal_action.connect(sigc::mem_fun(this, &TouchInterface::brightnessSlideMouse));
+    tcMenuMain->addControl(brightnessSlide);
+
+    // Full-screen invisible pointer; added last so the buttons take priority.
+    touchcontrols::Mouse *menuMouse = new touchcontrols::Mouse("mouse", touchcontrols::RectF(0, 0, 26, 16), "");
+    menuMouse->setHideGraphics(true);
+    menuMouse->setEditable(false);
+    tcMenuMain->addControl(menuMouse);
+    menuMouse->signal_action.connect(sigc::mem_fun(this, &TouchInterface::mouseMove));
+
+    tcMenuMain->signal_button.connect(sigc::mem_fun(this, &TouchInterface::menuButton));
+    tcMenuMain->setAlpha(0.8);
+    tcMenuMain->setFixAspect(true);
+
+    //Game -------------------------------------------
+    //------------------------------------------------------
+    tcGameMain->setAlpha(touchSettings.alpha);
+    tcGameMain->addControl(new touchcontrols::Button("back", touchcontrols::RectF(0, 0, 2, 2), "back_button", KEY_BACK_BUTTON, false, false, "Show menu"));
+    tcGameMain->addControl(new touchcontrols::Button("attack", touchcontrols::RectF(20, 7, 23, 10), "shoot", KEY_SHOOT, false, false, "Attack!"));
+    tcGameMain->addControl(new touchcontrols::Button("attack2", touchcontrols::RectF(3, 5, 6, 8), "shoot", KEY_SHOOT, false, true, "Attack! (duplicate)"));
+    tcGameMain->addControl(new touchcontrols::Button("attack_alt", touchcontrols::RectF(22, 4, 25, 7), "shoot_alt", PORT_ACT_ALT_ATTACK, false, false, "Alt fire"));
+
+    tcGameMain->addControl(new touchcontrols::Button("jump", touchcontrols::RectF(24, 3, 26, 5), "jump", PORT_ACT_JUMP, false, false, "Jump"));
+    tcGameMain->addControl(new touchcontrols::Button("crouch", touchcontrols::RectF(24, 14, 26, 16), "crouch", PORT_ACT_DOWN, false, false, "Crouch"));
+    tcGameMain->addControl(new touchcontrols::Button("use", touchcontrols::RectF(22, 14, 24, 16), "use", PORT_ACT_USE, false, false, "Use / enter vehicle"));
+
+    tcGameMain->addControl(new touchcontrols::Button("next_weapon", touchcontrols::RectF(0, 3, 3, 5), "next_weap", PORT_ACT_NEXT_WEP, false, false, "Next weapon"));
+    tcGameMain->addControl(new touchcontrols::Button("prev_weapon", touchcontrols::RectF(0, 5, 3, 7), "prev_weap", PORT_ACT_PREV_WEP, false, false, "Prev weapon"));
+    tcGameMain->addControl(new touchcontrols::Button("show_weapons", touchcontrols::RectF(12, 14, 14, 16), "show_weapons", KEY_SHOW_WEAPONS, false, false, "Show numbers"));
+
+    tcGameMain->addControl(new touchcontrols::Button("scores", touchcontrols::RectF(20, 0, 22, 2), "scores", PORT_ACT_MP_SCORES, false, false, "Scores"));
+    tcGameMain->addControl(new touchcontrols::Button("voice_menu", touchcontrols::RectF(16, 0, 18, 2), "chat", PORT_ACT_VOICE_MENU, false, false, "Speech menu"));
+    tcGameMain->addControl(new touchcontrols::Button("talk", touchcontrols::RectF(14, 0, 16, 2), "keyboard", PORT_ACT_MP_SAY, false, true, "Talk"));
+    tcGameMain->addControl(new touchcontrols::Button("keyboard", touchcontrols::RectF(8, 0, 10, 2), "keyboard", KEY_SHOW_KBRD, false, false, "Show keyboard"));
+    tcGameMain->addControl(new touchcontrols::Button("console", touchcontrols::RectF(6, 0, 8, 2), "tild", PORT_ACT_CONSOLE, false, true, "Console"));
+    tcGameMain->addControl(new touchcontrols::Button("show_mouse", touchcontrols::RectF(4, 0, 6, 2), "left_mouse", KEY_USE_MOUSE, false, true, "Use mouse"));
+    tcGameMain->addControl(new touchcontrols::Button("show_custom", touchcontrols::RectF(0, 7, 2, 9), "custom_show", KEY_SHOW_CUSTOM, false, true, "Show custom"));
+
+    touchcontrols::ButtonGrid *dpad = new touchcontrols::ButtonGrid("dpad_move", touchcontrols::RectF(6, 3, 12, 7), "", 3, 2, true, "Movement btns (WASD)");
+
+    dpad->addCell(0, 1, "direction_left", PORT_ACT_MOVE_LEFT);
+    dpad->addCell(2, 1, "direction_right", PORT_ACT_MOVE_RIGHT);
+    dpad->addCell(1, 0, "direction_up", PORT_ACT_FWD);
+    dpad->addCell(1, 1, "direction_down", PORT_ACT_BACK);
+    tcGameMain->addControl(dpad);
+
+    touchJoyRight = new touchcontrols::TouchJoy("touch", touchcontrols::RectF(17, 4, 26, 16), "look_arrow", "fixed_stick_circle");
+    tcGameMain->addControl(touchJoyRight);
+    touchJoyRight->signal_move.connect(sigc::mem_fun(this, &TouchInterface::rightStick));
+    touchJoyRight->signal_double_tap.connect(sigc::mem_fun(this, &TouchInterface::rightDoubleTap));
+
+    touchJoyLeft = new touchcontrols::TouchJoy("stick", touchcontrols::RectF(0, 7, 8, 16), "strafe_arrow", "fixed_stick_circle");
+    tcGameMain->addControl(touchJoyLeft);
+    touchJoyLeft->signal_move.connect(sigc::mem_fun(this, &TouchInterface::leftStick));
+    touchJoyLeft->signal_double_tap.connect(sigc::mem_fun(this, &TouchInterface::leftDoubleTap));
+
+    // SWAPFIX
+    touchJoyLeft->registerTouchJoySWAPFIX(touchJoyRight);
+    touchJoyRight->registerTouchJoySWAPFIX(touchJoyLeft);
+
+    tcGameMain->signal_button.connect(sigc::mem_fun(this, &TouchInterface::gameButton));
+    tcGameMain->signal_settingsButton.connect(sigc::mem_fun(this, &TouchInterface::gameSettingsButton));
+
+    //Weapons -------------------------------------------
+    //------------------------------------------------------
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon1", touchcontrols::RectF(1, 14, 3, 16), "key_1", 1));
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon2", touchcontrols::RectF(3, 14, 5, 16), "key_2", 2));
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon3", touchcontrols::RectF(5, 14, 7, 16), "key_3", 3));
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon4", touchcontrols::RectF(7, 14, 9, 16), "key_4", 4));
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon5", touchcontrols::RectF(9, 14, 11, 16), "key_5", 5));
+
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon6", touchcontrols::RectF(15, 14, 17, 16), "key_6", 6));
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon7", touchcontrols::RectF(17, 14, 19, 16), "key_7", 7));
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon8", touchcontrols::RectF(19, 14, 21, 16), "key_8", 8));
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon9", touchcontrols::RectF(21, 14, 23, 16), "key_9", 9));
+    tcGameWeapons->addControl(new touchcontrols::Button("weapon0", touchcontrols::RectF(23, 14, 25, 16), "key_0", 0));
+
+    tcGameWeapons->signal_button.connect(sigc::mem_fun(this, &TouchInterface::selectWeaponButton));
+    tcGameWeapons->setAlpha(0.8);
+
+    //Weapon wheel -------------------------------------------
+    //------------------------------------------------------
+
+    wheelSelect = new touchcontrols::WheelSelect("weapon_wheel", touchcontrols::RectF(7, 2, 19, 14), "weapon_wheel_%d", wheelNbr);
+    wheelSelect->signal_selected.connect(sigc::mem_fun(this, &TouchInterface::weaponWheel));
+    wheelSelect->signal_enabled.connect(sigc::mem_fun(this, &TouchInterface::weaponWheelSelected));
+    tcWeaponWheel->addControl(wheelSelect);
+
+    if(touchSettings.weaponWheelOpaque)
+        tcWeaponWheel->setAlpha(0.8);
+    else
+        tcWeaponWheel->setAlpha(touchSettings.alpha);
+
+    // Inventory (unused: UT2004 has none) ----------------
+    //------------------------------------------------------
+    uiInventoryButtonGrid = new touchcontrols::ButtonGrid("inventory_grid", touchcontrols::RectF(3, 9, 11, 11), "inventory_bg", 4, 1);
+    uiInventoryButtonGrid->signal_outside.connect(sigc::mem_fun(this, &TouchInterface::inventoryOutside));
+    tcInventory->addControl(uiInventoryButtonGrid);
+    tcInventory->setPassThroughTouch(touchcontrols::TouchControls::PassThrough::NO_CONTROL);
+    tcInventory->signal_button.connect(sigc::mem_fun(this, &TouchInterface::inventoryButton));
+
+    //Blank -------------------------------------------
+    //------------------------------------------------------
+    tcBlank->addControl(new touchcontrols::Button("enter", touchcontrols::RectF(0, 0, 26, 16), "", 0x123));
+    tcBlank->signal_button.connect(sigc::mem_fun(this, &TouchInterface::blankButton));
+
+    //Keyboard -------------------------------------------
+    //------------------------------------------------------
+    uiKeyboard = new touchcontrols::UI_Keyboard("keyboard", touchcontrols::RectF(0, 8, 26, 16), "font_dual", 0, 0, 0);
+    uiKeyboard->signal.connect(sigc::mem_fun(this, &TouchInterface::keyboardKeyPressed));
+    tcKeyboard->addControl(uiKeyboard);
+    // We want touch to pass through only where there is no keyboard
+    tcKeyboard->setPassThroughTouch(touchcontrols::TouchControls::PassThrough::NO_CONTROL);
+
+    //Yes No -------------------------------------------
+    //------------------------------------------------------
+    tcYesNo->addControl(new touchcontrols::Button("yes", touchcontrols::RectF(8, 12, 11, 15), "key_y", PORT_ACT_MENU_CONFIRM));
+    tcYesNo->addControl(new touchcontrols::Button("no", touchcontrols::RectF(15, 12, 18, 15), "key_n", PORT_ACT_MENU_ABORT));
+    tcYesNo->signal_button.connect(sigc::mem_fun(this, &TouchInterface::menuButton));
+    tcYesNo->setAlpha(0.8);
+
+    //Gamepad utility -------------------------------------------
+    //------------------------------------------------------
+    touchcontrols::ButtonGrid *gamepadUtils = new touchcontrols::ButtonGrid("gamepad_grid", touchcontrols::RectF(8, 5, 18, 11), "gamepad_utils_bg", 3, 2);
+
+    gamepadUtils->addCell(0, 0, "back_button", KEY_BACK_BUTTON);
+    gamepadUtils->addCell(0, 1, "scores", PORT_ACT_MP_SCORES);
+    gamepadUtils->addCell(1, 0, "keyboard", KEY_SHOW_KBRD);
+    gamepadUtils->addCell(1, 1, "tild", PORT_ACT_CONSOLE);
+    gamepadUtils->addCell(2, 0, "chat", PORT_ACT_VOICE_MENU);
+    gamepadUtils->addCell(2, 1, "use", PORT_ACT_USE);
+
+    gamepadUtils->signal_outside.connect(sigc::mem_fun(this, &TouchInterface::gameUtilitiesOutside));
+
+    tcGamepadUtility->addControl(gamepadUtils);
+    tcGamepadUtility->setAlpha(0.9);
+    tcGamepadUtility->signal_button.connect(sigc::mem_fun(this, &TouchInterface::gameUtilitiesButton));
+
+    // DPad inventory (unused) --------------------------
+    //------------------------------------------------------
+    touchcontrols::DPadSelect *dpadInventory = new touchcontrols::DPadSelect("dpad_inventory", touchcontrols::RectF(9, 4, 17, 12), "dpad", PORT_ACT_INVUSE);
+    dpadInventory->signal_button.connect(sigc::mem_fun(this, &TouchInterface::dPadInventoryButton));
+    dpadInventory->signal_outside.connect(sigc::mem_fun(this, &TouchInterface::dPadInventoryOutside));
+    tcDPadInventory->addControl(dpadInventory);
+
+    // Pointer over the game ("Use mouse")
+    touchcontrols::Mouse *mouse = new touchcontrols::Mouse("mouse", touchcontrols::RectF(0, 0, 26, 16), "");
+    mouse->setHideGraphics(true);
+    mouse->setEditable(false);
+    tcMouse->addControl(mouse);
+    mouse->signal_action.connect(sigc::mem_fun(this, &TouchInterface::mouseMove));
+    tcMouse->addControl(new touchcontrols::Button("back", touchcontrols::RectF(0, 0, 2, 2), "back_button", KEY_BACK_BUTTON, false, false, "Back"));
+    tcMouse->signal_button.connect(sigc::mem_fun(this, &TouchInterface::mouseButton));
+
+    std::string
+    newSettings = (std::string) filesPath + "/touch_settings_"
+    ENGINE_NAME
+    ".xml";
+
+    touchcontrols::tTouchSettingsModifier modifier;
+    modifier.mouseLookVisible = true;
+
+    UI_tc = touchcontrols::createDefaultSettingsUI(&controlsContainer, newSettings, &modifier);
+    UI_tc->setAlpha(1);
+
+    //---------------------------------------------------------------
+    //---------------------------------------------------------------
+    controlsContainer.addControlGroup(tcKeyboard);
+    controlsContainer.addControlGroup(tcInventory); // before gamemain so touches don't go through
+    controlsContainer.addControlGroup(tcGamepadUtility); // before gamemain so touches don't go through
+    controlsContainer.addControlGroup(tcDPadInventory);
+    controlsContainer.addControlGroup(tcCustomButtons);
+    controlsContainer.addControlGroup(tcGameMain);
+    controlsContainer.addControlGroup(tcYesNo);
+    controlsContainer.addControlGroup(tcGameWeapons);
+    controlsContainer.addControlGroup(tcMenuMain);
+    controlsContainer.addControlGroup(tcWeaponWheel);
+    controlsContainer.addControlGroup(tcBlank);
+    controlsContainer.addControlGroup(tcMouse);
+
+    tcMenuMain->setXMLFile((std::string) filesPath + "/menu.xml");
+
+    tcGameMain->setXMLFile((std::string) filesPath + "/game_"
+    ENGINE_NAME
+    ".xml");
+    tcInventory->setXMLFile((std::string) filesPath + "/inventory_"
+    ENGINE_NAME
+    ".xml");
+    tcWeaponWheel->setXMLFile((std::string) filesPath + "/weaponwheel_"
+    ENGINE_NAME
+    ".xml");
+    tcGameWeapons->setXMLFile((std::string) filesPath + "/weapons_"
+    ENGINE_NAME
+    ".xml");
+    tcCustomButtons->setXMLFile((std::string) filesPath + "/custom_buttons_0_"
+    ENGINE_NAME
+    ".xml");
+}
+
+void TouchInterface::blankButton(int state, int code)
+{
+    PortableKeyEvent(state, SDL_SCANCODE_SPACE, 0);
+}
+
+void TouchInterface::automapButton(int state, int code)
+{
+}
+
+void TouchInterface::newFrame()
+{
+    UT2004_TouchFrame();
+
+    touchscreemode_t screenMode = PortableGetScreenMode();
+
+    // Hack to show custom buttons while in the menu to bind keys
+    if(screenMode == TS_MENU && showCustomMenu == true)
+    {
+        screenMode = TS_CUSTOM;
+    }
+
+    updateTouchScreenModeOut(screenMode);
+    updateTouchScreenModeIn(screenMode);
+
+    currentScreenMode = screenMode;
+}
+
+void TouchInterface::newGLContext()
+{
+}

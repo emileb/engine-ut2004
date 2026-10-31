@@ -606,6 +606,11 @@ UBOOL UGL4ESRenderDevice::SetRes(UViewport* Viewport,INT NewX,INT NewY,UBOOL Ful
 			// Mali), and its check indexes the bound textures with the texture unit read back from the program,
 			// which can be out of range. Off, every target runs gl4es the same way.
 			setenv("LIBGL_FBOUNBIND", "0", 1);
+#if defined(UE_OPENTOUCH)
+			// The OpenTouch launcher sets these for its own gl4es.
+			unsetenv("LIBGL_GL");
+			unsetenv("LIBGL_DEFAULTWRAP");
+#endif
 
 #if defined(__ANDROID__)
 			// The Android emulator's emugl GLES translator mishandles GL_BGRA texture uploads (it

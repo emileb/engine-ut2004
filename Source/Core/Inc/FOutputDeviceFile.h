@@ -10,6 +10,10 @@
 // GLog goes straight to logcat (tag "UT2004"); see the echo block below.
 #include <android/log.h>
 #endif
+#if defined(UE_OPENTOUCH)
+// The launcher's shareable log file (Clibs_OpenTouch).
+extern "C" void LogWritter_Write( const char* Msg );
+#endif
 
 //
 // ANSI file output device.
@@ -209,6 +213,9 @@ public:
 					__android_log_print( ANDROID_LOG_INFO, "UT2004", "%s: %s",
 						appToAnsi( FName::SafeString(Event), EchoEvent, ARRAY_COUNT(EchoEvent) ),
 						appToAnsi( Data, EchoData, ARRAY_COUNT(EchoData) ) );
+#if defined(UE_OPENTOUCH)
+					LogWritter_Write( appToAnsi( Data, EchoData, ARRAY_COUNT(EchoData) ) );
+#endif
 #else
 					printf( "%s: %s\n",
 						appToAnsi( FName::SafeString(Event), EchoEvent, ARRAY_COUNT(EchoEvent) ),

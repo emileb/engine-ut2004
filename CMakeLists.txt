@@ -31,6 +31,12 @@ endif()
 #-----------------------------------------------------------------------------
 
 option(BUILD_STATIC "Build all modules as static libraries" ON)
+# UE_OPENTOUCH: Android, built into an OpenTouch app (Sigma Touch), whose parent CMake supplies SDL2 and openal-soft
+# and whose launcher replaces Android/.
+option(UE_OPENTOUCH "Android: build for the OpenTouch launcher (Sigma Touch)" OFF)
+if(UE_OPENTOUCH)
+  add_definitions(-DUE_OPENTOUCH=1)
+endif()
 # The three web build modes (Emscripten only), the same in every engine repo:
 #
 #   preset        UE_WEB_PERF  UE_WEB_DEBUG  compile   what it is for
@@ -509,7 +515,12 @@ function(ut_provide_samplerate_linker_name)
                  "${_dir}/libsamplerate.so -> ${UE_SAMPLERATE_SONAME}")
 endfunction()
 
-if(NOT EMSCRIPTEN)
+if(UE_OPENTOUCH)
+  # The parent project imports the app's SDL2 as SDL2::SDL2-static.
+  if(NOT TARGET SDL2::SDL2-static)
+    message(FATAL_ERROR "UE_OPENTOUCH: the parent project must define SDL2::SDL2-static")
+  endif()
+elseif(NOT EMSCRIPTEN)
   FetchContent_Declare(
     SDL2
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
@@ -591,7 +602,7 @@ if((CMAKE_SYSTEM_NAME STREQUAL "Linux" OR APPLE) AND NOT ANDROID AND NOT EMSCRIP
   set(UE_LINUX_OPENALSOFT ON)
 endif()
 
-if(ANDROID OR UE_LINUX_OPENALSOFT)
+if((ANDROID AND NOT UE_OPENTOUCH) OR UE_LINUX_OPENALSOFT)
   # openal-soft is C++20, and the engine's global C++ settings (CMAKE_CXX_STANDARD 14 and the clang
   # -fdelayed-template-parsing, which a FetchContent'd subproject inherits) miscompile its static-init
   # filter tables (core/bsinc_tables.cpp): a null-deref crash in openal's global constructors at dlopen.
@@ -974,7 +985,7 @@ endif()
 # Android JNI process-prep bridge: a small standalone .so, loaded by GameActivity's static block and
 # called before super.onCreate()/SDL_main, that sets UT2004_ANDROID_BASEDIR and chdir's to the on-storage
 # System dir so the engine reads the game tree in place.
-if(ANDROID)
+if(ANDROID AND NOT UE_OPENTOUCH)
   add_library(ut2004_android_bridge SHARED ${UT2004_SOURCE_DIR}/Android/app/src/main/cpp/android_bridge.cpp)
   target_link_libraries(ut2004_android_bridge android log)
 endif()

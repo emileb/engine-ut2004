@@ -399,6 +399,22 @@ elseif(ANDROID)
   # -export-dynamic keeps the reflection/class-loading symbols and SDL_main exported for
   # SDLActivity's dlsym. No -m32 / no -rpath,. on Android.
   target_link_options(${PROJECT_NAME} PRIVATE -Wl,-export-dynamic)
+  if(UE_OPENTOUCH)
+    # OpenTouch glue: the JNI bridge and touch controls (mobile/, Clibs_OpenTouch), SAFFAL's file access.
+    # mobile/ comes before Clibs so the shared glue sees this engine's touch_interface.h.
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ENGINE_NAME="ut2004")
+    target_include_directories(${PROJECT_NAME} PRIVATE
+      ${UT2004_SOURCE_DIR}/mobile ${SDL2_IMAGE_INCLUDE_DIR} ${CLIBS_DIR} ${TOUCH_CONTROLS_DIR})
+    target_sources(${PROJECT_NAME} PRIVATE
+      ${UT2004_SOURCE_DIR}/mobile/game_interface.cpp
+      ${UT2004_SOURCE_DIR}/mobile/touch_interface_ut2004.cpp
+      ${CLIBS_DIR}/sigma/android_jni.cpp
+      ${CLIBS_DIR}/touch_interface_base.cpp
+      ${CLIBS_DIR}/LogWritter.c
+      ${CLIBS_DIR}/fts.c
+      ${CLIBS_DIR}/rand.c)
+    target_link_libraries(${PROJECT_NAME} saffal touchcontrols SDL2_image)
+  endif()
 else()
   # Native: link SDL and the system libraries. SDL comes after all static archives for correct symbol
   # resolution.
@@ -449,7 +465,11 @@ endif()
 if(ANDROID)
   # libUT2004.so -- must equal GameActivity.getLibraries()'s last entry (SDLActivity loads it and
   # dlsym's SDL_main). Force the "lib" prefix (the root leaves the default prefix on Android).
-  set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME UT2004 PREFIX "lib" SUFFIX ".so")
+  if(UE_OPENTOUCH)
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ut2004 PREFIX "lib" SUFFIX ".so")
+  else()
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME UT2004 PREFIX "lib" SUFFIX ".so")
+  endif()
 elseif(NOT EMSCRIPTEN)
   set(UE_BIN_NAME "ut2004")
   # The name says which physics: the default (recovered Karma) is unsuffixed because it is what ships,

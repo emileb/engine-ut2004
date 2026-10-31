@@ -11,6 +11,18 @@
 #include <emscripten/html5_webgl.h>
 #endif
 
+#if defined(__ANDROID__)
+// Android touch overlay glue. The Java on-screen overlay runs on the UI
+// thread and cannot touch the engine directly; it writes intent through the JNI
+// functions below and USDL2Viewport::UpdateInput (engine thread) drains it once
+// per tick. Included before the engine headers: <atomic> pulls in <time.h>, whose
+// clock() declaration UnFile.h's clock(Timer) macro would mangle.
+#include <jni.h>
+#include <atomic>
+#include <mutex>
+#include <vector>
+#endif
+
 #include "SDL2Drv.h"
 #include "SDL2InputTest.h"
 #if defined(__EMSCRIPTEN__)
@@ -53,16 +65,6 @@ static void BorderlessSize( SDL_Window* Window, INT& X, INT& Y )
 }
 #endif
 
-#if defined(__ANDROID__)
-// Android touch overlay glue. The Java on-screen overlay runs on the UI
-// thread and cannot touch the engine directly; it writes intent through the JNI
-// functions below and USDL2Viewport::UpdateInput (engine thread) drains it once
-// per tick.
-#include <jni.h>
-#include <atomic>
-#include <mutex>
-#include <vector>
-#endif
 
 /*-----------------------------------------------------------------------------
     Class implementation.
@@ -296,6 +298,33 @@ Java_com_ut2004_android_GameActivity_nativeTouchButton( JNIEnv*, jclass, jint Bu
 
     AndroidQueueButton( Key, Down ? IST_Press : IST_Release );
 }
+
+#if defined(UE_OPENTOUCH)
+// The OpenTouch touch controls (mobile/game_interface.cpp) feed the same state from the UI thread.
+int UT2004_TouchMenuVisible()
+{
+    return GAndroidMenuVisible ? 1 : 0;
+}
+
+// Strafe right and move back are positive, in [-1,1].
+void UT2004_TouchMove( float Strafe, float Back )
+{
+    GAndroidMoveX.store( Strafe, std::memory_order_relaxed );
+    GAndroidMoveY.store( Back, std::memory_order_relaxed );
+}
+
+// Screen pixels: right and down are positive.
+void UT2004_TouchLook( float DX, float DY )
+{
+    AndroidAtomicAddF( GAndroidLookX, DX );
+    AndroidAtomicAddF( GAndroidLookY, DY );
+}
+
+void UT2004_TouchKey( int Key, int Down )
+{
+    AndroidQueueButton( Key, Down ? IST_Press : IST_Release );
+}
+#endif
 
 } // extern "C"
 
