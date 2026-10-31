@@ -31,7 +31,7 @@ endif()
 # SDLLaunch does).
 target_include_directories(${PROJECT_NAME} PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/Src
-  ${CMAKE_SOURCE_DIR}/Source/Engine/Src
+  ${UT2004_SOURCE_DIR}/Source/Engine/Src
 )
 
 # No Editor target; ALAudio is omitted, so WITH_SPEEX has no effect here.

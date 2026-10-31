@@ -19,7 +19,7 @@ target_include_directories(${PROJECT_NAME}
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Inc
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Src
-    ${CMAKE_SOURCE_DIR}/Thirdparty/OpenAL/Inc
+    ${UT2004_SOURCE_DIR}/Thirdparty/OpenAL/Inc
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE

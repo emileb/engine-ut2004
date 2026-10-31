@@ -4,7 +4,7 @@
 #=============================================================================
 
 cmake_minimum_required(VERSION 3.15)
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 project(UT2004 C CXX)
 
@@ -678,7 +678,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 FetchContent_MakeAvailable(GL4ES)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
 
-# GL4ES's CMakeLists.txt sets CMAKE_ARCHIVE_OUTPUT_DIRECTORY to ${CMAKE_SOURCE_DIR}/lib, which
+# GL4ES's CMakeLists.txt sets CMAKE_ARCHIVE_OUTPUT_DIRECTORY to ${UT2004_SOURCE_DIR}/lib, which
 # would make every build share one libGL.a: redirect each build's output to its own binary directory.
 # gl4es names its library target after what it impersonates: `GL`, and `OPENGL32` on Windows (an
 # opengl32 replacement). Everything below refers to one handle, so the name is normalised once.
@@ -975,6 +975,6 @@ endif()
 # called before super.onCreate()/SDL_main, that sets UT2004_ANDROID_BASEDIR and chdir's to the on-storage
 # System dir so the engine reads the game tree in place.
 if(ANDROID)
-  add_library(ut2004_android_bridge SHARED ${CMAKE_SOURCE_DIR}/Android/app/src/main/cpp/android_bridge.cpp)
+  add_library(ut2004_android_bridge SHARED ${UT2004_SOURCE_DIR}/Android/app/src/main/cpp/android_bridge.cpp)
   target_link_libraries(ut2004_android_bridge android log)
 endif()

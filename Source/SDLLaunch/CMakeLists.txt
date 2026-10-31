@@ -33,24 +33,24 @@ endif()
 if(EMSCRIPTEN)
   target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Src
-    ${CMAKE_SOURCE_DIR}/Source/Engine/Src
-    ${CMAKE_SOURCE_DIR}/Source/OpenGLDrv/Inc/linuxGL
-    ${CMAKE_SOURCE_DIR}/Source/GL4ESDrv/Inc
+    ${UT2004_SOURCE_DIR}/Source/Engine/Src
+    ${UT2004_SOURCE_DIR}/Source/OpenGLDrv/Inc/linuxGL
+    ${UT2004_SOURCE_DIR}/Source/GL4ESDrv/Inc
     ${gl4es_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/Thirdparty/OpenAL/Inc
+    ${UT2004_SOURCE_DIR}/Thirdparty/OpenAL/Inc
   )
 else()
   target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Src
-    ${CMAKE_SOURCE_DIR}/Source/Engine/Src
-    ${CMAKE_SOURCE_DIR}/Thirdparty/OpenAL/Inc
+    ${UT2004_SOURCE_DIR}/Source/Engine/Src
+    ${UT2004_SOURCE_DIR}/Thirdparty/OpenAL/Inc
   )
   if(UE_HAS_OPENGLDRV)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Source/OpenGLDrv/Inc/linuxGL)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${UT2004_SOURCE_DIR}/Source/OpenGLDrv/Inc/linuxGL)
   endif()
   if(UE_HAS_GL4ESDRV)
     target_include_directories(${PROJECT_NAME} PRIVATE
-      ${CMAKE_SOURCE_DIR}/Source/GL4ESDrv/Inc
+      ${UT2004_SOURCE_DIR}/Source/GL4ESDrv/Inc
       ${gl4es_SOURCE_DIR}/include
     )
   endif()
@@ -127,7 +127,7 @@ if(UE_HAS_PIXODRV)
   # install. There is no 64-bit build of it and no source, which is why the top-level CMakeLists refuses
   # USE_PIXOMATIC at 64-bit.
   if(WIN32 OR MINGW)
-    set(_UE_PIXO_DLL "${CMAKE_SOURCE_DIR}/Thirdparty/Pixomatic/Bin/pixomatic.dll")
+    set(_UE_PIXO_DLL "${UT2004_SOURCE_DIR}/Thirdparty/Pixomatic/Bin/pixomatic.dll")
     if(NOT EXISTS "${_UE_PIXO_DLL}")
       message(FATAL_ERROR
         "USE_PIXOMATIC=ON on Windows needs the vendored ${_UE_PIXO_DLL}. pixomatic.lib is an import "
@@ -268,7 +268,7 @@ if(EMSCRIPTEN)
     # with the pool empty starts only after the main thread has spun up a worker for it, a start-up delay
     # the audio ring would absorb as an underrun.
     -sPTHREAD_POOL_SIZE=4
-    "SHELL:--js-library ${CMAKE_SOURCE_DIR}/vendor/glue/wasmfs-shim.js"
+    "SHELL:--js-library ${UT2004_SOURCE_DIR}/vendor/glue/wasmfs-shim.js"
     # No -lopenal: openal-soft (the OpenAL target, linked above) replaces Emscripten's libopenal.js, and
     # linking both would put two definitions of every al* symbol in one module.
     # No host page is baked: the engine emits a bare loader (SDLLaunch.{js,wasm,data},
@@ -276,7 +276,7 @@ if(EMSCRIPTEN)
     # global `Module`, injects SDLLaunch.js, and injects the heavy glue. Only the thin shims in vendor/glue
     # are baked; the net shim's $ueNet rides in via each forwarder's __deps (the wasm imports the
     # ue_net_* symbols), so no DEFAULT_LIBRARY_FUNCS_TO_INCLUDE force-include is needed.
-    "SHELL:--js-library ${CMAKE_SOURCE_DIR}/vendor/glue/net-shim.js"
+    "SHELL:--js-library ${UT2004_SOURCE_DIR}/vendor/glue/net-shim.js"
   )
   # Game assets live out of tree. UE_ASSETS_DIR (required) is the UT2004 folder holding System/: the web
   # link embeds System/Build.ini and System/Packages.md5 from it.
@@ -303,30 +303,30 @@ if(EMSCRIPTEN)
   # two; the frontend's asset manifest excludes those derived names, so an install copy cannot shadow
   # them. Build.ini/Packages.md5 come from the asset dir (install metadata, not config).
   set(PRELOAD_FLAGS
-    "--preload-file ${CMAKE_SOURCE_DIR}/Engine/Config/web/Default.ini@/System/Default.ini"
-    "--preload-file ${CMAKE_SOURCE_DIR}/Engine/Config/web/DefUser.ini@/System/DefUser.ini"
+    "--preload-file ${UT2004_SOURCE_DIR}/Engine/Config/web/Default.ini@/System/Default.ini"
+    "--preload-file ${UT2004_SOURCE_DIR}/Engine/Config/web/DefUser.ini@/System/DefUser.ini"
     "--preload-file ${UE_ASSETS_DIR}/System/Build.ini@/System/Build.ini"
     "--preload-file ${UE_ASSETS_DIR}/System/Packages.md5@/System/Packages.md5"
   )
   # The preloaded inis are inputs to the link step: without LINK_DEPENDS, editing Engine/Config/web/*
   # would leave a stale .data baked (cmake sees no source change and skips the relink).
   set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
-    "${CMAKE_SOURCE_DIR}/Engine/Config/web/Default.ini"
-    "${CMAKE_SOURCE_DIR}/Engine/Config/web/DefUser.ini")
+    "${UT2004_SOURCE_DIR}/Engine/Config/web/Default.ini"
+    "${UT2004_SOURCE_DIR}/Engine/Config/web/DefUser.ini")
   # The --js-library shims are link inputs too, and CMake does not infer that from a link option:
   # without this, editing a shim would leave a stale .js baked while the build reported success.
   set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
-    "${CMAKE_SOURCE_DIR}/vendor/glue/wasmfs-shim.js"
-    "${CMAKE_SOURCE_DIR}/vendor/glue/net-shim.js")
+    "${UT2004_SOURCE_DIR}/vendor/glue/wasmfs-shim.js"
+    "${UT2004_SOURCE_DIR}/vendor/glue/net-shim.js")
   # ProxyNetDrv's own thin shim (the optional proxynet ABI module), a separate --js-library: the net shim
   # stays identical across every engine repo, and with UE_WITH_PROXYNET=OFF the wasm has no ue_proxynet_*
   # imports at all. Its $ueProxyNet rides in via each forwarder's __deps.
   if(UE_WITH_PROXYNET)
     target_compile_definitions(${PROJECT_NAME} PRIVATE UE_WITH_PROXYNET=1)
     target_link_options(${PROJECT_NAME} PRIVATE
-      "SHELL:--js-library ${CMAKE_SOURCE_DIR}/vendor/glue/proxynet-shim.js")
+      "SHELL:--js-library ${UT2004_SOURCE_DIR}/vendor/glue/proxynet-shim.js")
     set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
-      "${CMAKE_SOURCE_DIR}/vendor/glue/proxynet-shim.js")
+      "${UT2004_SOURCE_DIR}/vendor/glue/proxynet-shim.js")
   endif()
   string(REPLACE ";" " " PRELOAD_FLAGS_STR "${PRELOAD_FLAGS}")
   set_property(TARGET ${PROJECT_NAME} APPEND_STRING PROPERTY LINK_FLAGS " ${PRELOAD_FLAGS_STR}")
@@ -354,9 +354,9 @@ if(EMSCRIPTEN)
   # served file. The frontend's build validates it before assembling (schema + abiVersion === glue
   # ABI_VERSION + checksums + host-supported loaderStyle). abiVersion is read from the vendored ABI
   # header (single source); provenance/toolchain are best-effort.
-  file(STRINGS ${CMAKE_SOURCE_DIR}/vendor/glue/ue_abi.h _ue_abi_line REGEX "define[ \t]+UE_ABI_VERSION")
+  file(STRINGS ${UT2004_SOURCE_DIR}/vendor/glue/ue_abi.h _ue_abi_line REGEX "define[ \t]+UE_ABI_VERSION")
   string(REGEX MATCH "([0-9]+)" UE_ABI_VERSION "${_ue_abi_line}")
-  execute_process(COMMAND git -C ${CMAKE_SOURCE_DIR} rev-parse --short HEAD
+  execute_process(COMMAND git -C ${UT2004_SOURCE_DIR} rev-parse --short HEAD
     OUTPUT_VARIABLE META_GIT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
   string(TIMESTAMP META_BUILT_AT "%Y-%m-%dT%H:%M:%SZ" UTC)
   # The toolchain file knows where Emscripten is (a preset build has only $EMSDK set, not emcc on PATH).
@@ -366,7 +366,7 @@ if(EMSCRIPTEN)
     string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" META_EMCC "${_emcc_ver}")
   endif()
   # Every fetched library as repo@branch|tag, from the cache variables the fetch itself read.
-  include(${CMAKE_SOURCE_DIR}/cmake/ArtifactDeps.cmake)
+  include(${UT2004_SOURCE_DIR}/cmake/ArtifactDeps.cmake)
   set(META_DEPS)
   ufront_artifact_dep(META_DEPS gl4es GL4ES "${GL4ES_GIT_REPOSITORY}" "${GL4ES_GIT_TAG}")
   if(USE_KARMA_DECOMP)
@@ -479,7 +479,7 @@ endif()
 # in the exe's import table. Without the DLL the game runs without sound.
 #-----------------------------------------------------------------------------
 if(MINGW)
-  include(${CMAKE_SOURCE_DIR}/cmake/OpenALMingw.cmake)
+  include(${UT2004_SOURCE_DIR}/cmake/OpenALMingw.cmake)
   add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${OPENAL_MINGW_RUNTIME_DLL}"

@@ -20,7 +20,7 @@ target_include_directories(${PROJECT_NAME}
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Inc
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Src
-    ${CMAKE_SOURCE_DIR}/Source/Window/Inc
+    ${UT2004_SOURCE_DIR}/Source/Window/Inc
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE

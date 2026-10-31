@@ -8,7 +8,7 @@ project(PixoDrv CXX)
 # pixomatic_linux.a is byte-identical to Epic's v3186 drop (Pixomatic shipped only through 3186). For a
 # source release that must not bundle the proprietary library, remove Thirdparty/Pixomatic and point
 # PIXOMATIC_DIR at an external copy: -DPIXOMATIC_DIR=/path/to/drop (expects <PIXOMATIC_DIR>/Pixomatic/{Inc,Lib}).
-set(PIXOMATIC_DIR "${CMAKE_SOURCE_DIR}/Thirdparty" CACHE PATH "Root holding Pixomatic/{Inc,Lib} (default: in-tree vendored copy)")
+set(PIXOMATIC_DIR "${UT2004_SOURCE_DIR}/Thirdparty" CACHE PATH "Root holding Pixomatic/{Inc,Lib} (default: in-tree vendored copy)")
 set(PIXOMATIC_INC "${PIXOMATIC_DIR}/Pixomatic/Inc")
 # The drop ships both a Linux .a and the original Windows pixomatic.lib (the import library of
 # pixomatic.dll, plain C with stdcall-decorated symbols, `_PixoFoo@40`), which MinGW links directly.

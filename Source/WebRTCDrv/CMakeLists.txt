@@ -17,7 +17,7 @@ add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})
 
 # vendor/glue is PUBLIC: WebRTCDrv.h includes ue_abi.h, and SDLLaunch includes WebRTCDrv.h.
 target_include_directories(${PROJECT_NAME}
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Inc ${CMAKE_SOURCE_DIR}/vendor/glue
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Inc ${UT2004_SOURCE_DIR}/vendor/glue
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Src
 )
 
