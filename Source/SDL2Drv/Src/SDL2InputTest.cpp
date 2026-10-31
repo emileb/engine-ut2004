@@ -38,12 +38,14 @@ void FSDL2InputTest::Detach()
         return;
     SDL_JoystickClose( Virtual );
     Virtual = NULL;
+#if SDL_VERSION_ATLEAST(2,0,14)
     for( INT i = 0; i < SDL_NumJoysticks(); i++ )
         if( SDL_JoystickGetDeviceInstanceID( i ) == VirtualID )
         {
             SDL_JoystickDetachVirtual( i );
             break;
         }
+#endif
     VirtualID = -1;
 }
 
@@ -98,6 +100,8 @@ UBOOL FSDL2InputTest::Execute( USDL2Viewport* Viewport, const TCHAR* Line )
     guard(FSDL2InputTest::Execute);
     debugf( NAME_Log, TEXT("SDL2InputTest: run %s"), Line );
     const TCHAR* Cmd = Line;
+    // Virtual joysticks are SDL 2.0.14 and later.
+#if SDL_VERSION_ATLEAST(2,0,14)
     if( ParseCommand(&Cmd,TEXT("PAD")) )
     {
         if( ParseCommand(&Cmd,TEXT("ATTACH")) )
@@ -172,7 +176,9 @@ UBOOL FSDL2InputTest::Execute( USDL2Viewport* Viewport, const TCHAR* Line )
         debugf( NAME_Log, TEXT("SDL2InputTest: virtual pad: unknown command") );
         return 0;
     }
-    else if( ParseCommand(&Cmd,TEXT("EXEC")) )
+    else
+#endif
+    if( ParseCommand(&Cmd,TEXT("EXEC")) )
     {
         Viewport->Exec( Cmd, *GLog );
         return 1;
