@@ -1070,6 +1070,15 @@ UBOOL USDL2Viewport::ResizeViewport( DWORD NewBlitFlags, INT InNewX, INT InNewY,
             OpenY = Client->WindowedViewportY;
         }
 #endif
+#ifdef __APPLE__
+        // Cocoa creates the EGL surface with the window, only when the ES profile is already asked for.
+        if( appStrfind(GConfig->GetStr(TEXT("Engine.Engine"), TEXT("RenderDevice"), TEXT("System")), TEXT("GL4ESDrv")) )
+        {
+            SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES );
+            SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 2 );
+            SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
+        }
+#endif
         Window = SDL_CreateWindow(
             "Unreal Tournament 2004",
             SDL_WINDOWPOS_CENTERED,

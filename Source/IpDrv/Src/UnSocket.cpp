@@ -405,7 +405,7 @@ UBOOL SetSocketLinger( INT Socket )
 
 UBOOL SetSocketRecvErr( INT Socket )
 {
-#ifdef LINUX
+#if defined(LINUX) && !defined(__APPLE__)
 	int on = 1;
 	return setsockopt(Socket, SOL_IP, IP_RECVERR, &on, sizeof (on)) == 0;
 #else

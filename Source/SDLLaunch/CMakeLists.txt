@@ -140,9 +140,15 @@ if(UE_HAS_PIXODRV)
   endif()
 endif()
 
-target_link_libraries(${PROJECT_NAME}
-  -Wl,--whole-archive ${LINK_PACKAGES} -Wl,--no-whole-archive
-)
+if(APPLE)
+  # ld64 has no --whole-archive; CMake spells it -force_load per archive.
+  string(REPLACE ";" "," _ue_whole "${LINK_PACKAGES}")
+  target_link_libraries(${PROJECT_NAME} "$<LINK_LIBRARY:WHOLE_ARCHIVE,${_ue_whole}>")
+else()
+  target_link_libraries(${PROJECT_NAME}
+    -Wl,--whole-archive ${LINK_PACKAGES} -Wl,--no-whole-archive
+  )
+endif()
 if(EMSCRIPTEN)
   # openal-soft (root CMakeLists) instead of Emscripten's -lopenal. Not whole-archive: its backends are
   # a static table, not self-registering objects, so ordinary archive resolution is right.
@@ -417,7 +423,11 @@ else()
     if(UE_PTR_BYTES EQUAL 4)
       target_link_options(${PROJECT_NAME} PRIVATE -m32)
     endif()
-    target_link_options(${PROJECT_NAME} PRIVATE -Wl,-export-dynamic -Wl,-rpath,.)
+    if(APPLE)
+      target_link_options(${PROJECT_NAME} PRIVATE -Wl,-export_dynamic -Wl,-rpath,@executable_path)
+    else()
+      target_link_options(${PROJECT_NAME} PRIVATE -Wl,-export-dynamic -Wl,-rpath,.)
+    endif()
   endif()
   # The bundled openal-soft (root CMakeLists, EAX on) beside the binary, as `libopenal.so`, the name
   # ALAudio dlopens (AL_DLL), resolved through the rpath '.' above from the System/ cwd. Copied, never

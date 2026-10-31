@@ -272,6 +272,23 @@ preset, a load-time import). A hardware fault, `std::terminate` and `abort` prin
 for `addr2line -e ut2004.exe`. `ucc.exe`, the retail UCC's name, imports system DLLs only; it reads its arguments as
 `ucc-bin` does (the ones after the commandlet's name), and a SIGINT to the wine process reaches it as Ctrl-C.
 
+## macOS
+
+A plain configure on a Mac (arm64, Apple clang) builds the Android code paths natively: ANSI strings, the clang
+flags of the NDK build, no x86 code. `MACOSX` stays undefined (it is the old PowerPC port's switch). GL4ES needs a
+checkout with the Mach-O changes, which have no symbol aliases.
+
+```bash
+cmake -S . -B build-macos -G Ninja -DFETCHCONTENT_SOURCE_DIR_GL4ES=<gl4es checkout>
+ninja -C build-macos      # -> ut2004.bin + libopenal.so (CoreAudio), ucc-bin
+tools/dev/run-macos.sh <UT2004 folder> gl                  # OpenGLDrv on the system's OpenGL 2.1
+ANGLE_DIR=<dir> tools/dev/run-macos.sh <UT2004 folder> gl4es   # GL4ESDrv through ANGLE's EGL/GLES
+```
+
+`run-macos.sh` links the build outputs into the folder's `System/`, puts the port's boot inis there and starts the
+game from it with `CPUSPEED=3000` (no CPU-speed probe off x86, as on Android). The window is created with the ES
+profile when the render device is GL4ESDrv: Cocoa makes the EGL surface with the window.
+
 ## Android
 
 `Android/` is a Gradle/NDK project (Android Gradle plugin 9.4.0, Gradle 9.6.0 through the wrapper) whose

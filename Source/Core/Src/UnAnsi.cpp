@@ -24,7 +24,7 @@
 #include <time.h>
 
 #ifndef __GCN__
-#  ifndef MACOSX
+#  if !defined(MACOSX) && !defined(__APPLE__)
 #    include <malloc.h>
 #  endif
 #include <sys/types.h>
@@ -446,8 +446,7 @@ CORE_API QWORD appStrtoq( const TCHAR* Start, TCHAR** End, INT Base )
 	return _wcstoui64( Start, End, Base );
 #else
   #if __UNIX__
-    debugf("FIXME: appStrtoq() is undefined!");
-    return(0);
+	return strtoull( Start, End, Base );
   #else
 	return _strtoui64( Start, End, Base );
   #endif
@@ -461,11 +460,13 @@ CORE_API TCHAR* appQtoa( QWORD Num, INT Base )
 	appMemzero( Buffer, sizeof(Buffer) );
 	return _ui64tow( Num, Buffer, Base );
 #else
-	static char Buffer[30];
+	static char Buffer[65];
 	appMemzero( Buffer, sizeof(Buffer) );
   #if __UNIX__
-    debugf("FIXME: appQtoa() is undefined!");
-    return(appItoa((INT) Num));
+	char* p = Buffer + sizeof(Buffer) - 1;
+	if( Base < 2 || Base > 36 ) Base = 10;
+	do { *--p = "0123456789abcdefghijklmnopqrstuvwxyz"[Num % Base]; Num /= Base; } while( Num );
+	return p;
   #else
 	return _ui64toa( Num, Buffer, Base );
   #endif

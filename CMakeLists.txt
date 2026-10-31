@@ -175,7 +175,8 @@ endif()
 # NO_UNICODE_OS_SUPPORT=1:
 # - wchar_t is 4 bytes on Emscripten (no -fshort-wchar support), and 4-byte wchar_t misinterprets the
 #   engine's 2-byte string data
-if(EMSCRIPTEN OR ANDROID OR MINGW)
+# macOS takes the Android path: 32-bit wchar_t in libc++, so ANSI as there.
+if(EMSCRIPTEN OR ANDROID OR MINGW OR APPLE)
   # bionic's wchar_t is 32-bit and its <wchar.h> uses a different include guard than glibc's _WCHAR_H,
   # so the engine's 16-bit wcs* redeclarations (UNICODE_BY_HAND block) clash with the system ones pulled
   # in by SDL2. MinGW's wchar_t is 16-bit but a distinct type from the engine's UNICHAR, so every
@@ -350,12 +351,12 @@ add_compile_options(
 )
 # -fno-lifetime-dse is a GCC-only flag; NDK clang rejects it as an unknown argument (emcc
 # ignores it). Not on Android.
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT APPLE)
   add_compile_options(-fno-lifetime-dse)
 endif()
 # -fshort-wchar makes wchar_t 16-bit (UT2004 expects this for Unicode strings). Emscripten and Android
 # use the NO_UNICODE_OS_SUPPORT (ANSI) path, whose libc++/bionic wchar.h expects 32-bit wchar_t.
-if(NOT EMSCRIPTEN AND NOT ANDROID)
+if(NOT EMSCRIPTEN AND NOT ANDROID AND NOT APPLE)
   add_compile_options(-fshort-wchar)
 endif()
 # -m32 on every 32-bit native build. Gated on UE_PTR_BYTES (the width this build actually produces), so
@@ -373,7 +374,7 @@ if(EMSCRIPTEN)
   # -Wno-reserved-user-defined-literal: allow GCC-style string concat in ASM macros
   # -Wno-incompatible-pointer-types: allow legacy UObject* pointer conversions
   string(APPEND CMAKE_CXX_FLAGS " -fdelayed-template-parsing -Wno-writable-strings -Wno-reserved-user-defined-literal -Wno-incompatible-pointer-types")
-elseif(ANDROID)
+elseif(ANDROID OR APPLE)
   # Android NDK is clang too -- apply the same GCC-like leniency as the Emscripten path
   # (grow the -Wno-* set as new clang diagnostics surface).
   string(APPEND CMAKE_CXX_FLAGS " -fdelayed-template-parsing -Wno-writable-strings -Wno-reserved-user-defined-literal -Wno-incompatible-pointer-types")
@@ -538,7 +539,7 @@ if(NOT EMSCRIPTEN)
   else()
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
-    if(MINGW)
+    if(MINGW OR APPLE)
       # Windows: SDL2 selects its own video/audio backends. The X11 forcing below is the Linux -m32
       # workaround; here it would send SDL2 looking for X11 libs a Windows target does not have.
       FetchContent_MakeAvailable(SDL2)
@@ -586,7 +587,7 @@ set(OPENALSOFT_GIT_TAG "ufront/web" CACHE STRING "openal-soft git ref (a branch:
 # POST_BUILD and found through the executable's rpath '.' when run from a System/ directory.
 option(UE_BUNDLED_OPENAL "Native Linux: build openal-soft (the ufront fork, EAX on) and put libopenal.so beside the binary, instead of dlopen'ing whatever libopenal the system has" ON)
 set(UE_LINUX_OPENALSOFT OFF)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID AND NOT EMSCRIPTEN AND UE_BUNDLED_OPENAL)
+if((CMAKE_SYSTEM_NAME STREQUAL "Linux" OR APPLE) AND NOT ANDROID AND NOT EMSCRIPTEN AND UE_BUNDLED_OPENAL)
   set(UE_LINUX_OPENALSOFT ON)
 endif()
 

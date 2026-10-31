@@ -24,6 +24,8 @@
 #   define GL_DLL (TEXT("OpenGL32.dll"))
 #elif defined(_WIN32)
 #   define GL_DLL (TEXT("OpenGL32.dll"))	// SDL owns the context; the entry points still come from OpenGL32
+#elif defined(__APPLE__)
+#   define GL_DLL (TEXT("/System/Library/Frameworks/OpenGL.framework/Libraries/libGL.dylib"))
 #elif ((__linux__) || (__FreeBSD__))
 #   define GL_DLL (TEXT("libGL.so.1"))
 #elif MACOSX

@@ -6,7 +6,7 @@
 		* Created by Tim Sweeney
 =============================================================================*/
 
-#if !MACOSX
+#if !MACOSX && !defined(__APPLE__)
 #include <malloc.h>
 #endif
 

@@ -48,6 +48,10 @@ if(MINGW)
     -Wl,--whole-archive ${LINK_PACKAGES} -Wl,--no-whole-archive
     ws2_32 winmm ole32 shell32 advapi32 m
   )
+elseif(APPLE)
+  string(REPLACE ";" "," _ue_whole "${LINK_PACKAGES}")
+  target_link_libraries(${PROJECT_NAME} "$<LINK_LIBRARY:WHOLE_ARCHIVE,${_ue_whole}>" dl pthread m)
+  target_link_options(${PROJECT_NAME} PRIVATE -Wl,-export_dynamic -Wl,-rpath,@executable_path)
 else()
   target_link_libraries(${PROJECT_NAME}
     -Wl,--whole-archive ${LINK_PACKAGES} -Wl,--no-whole-archive

@@ -42,6 +42,11 @@ typedef unsigned short  unsigned16;
 typedef unsigned char   unsigned8;
 typedef unsigned char   byte;
 
+#ifdef __APPLE__
+// <unistd.h> declares a uuid_t of its own.
+#define uuid_t ue_uuid_t
+#endif
+
 #define CLOCK_SEQ_LAST	0x3FFF
 #define RAND_MASK		CLOCK_SEQ_LAST
 
