@@ -37,6 +37,11 @@ struct FGles
     void (*VertexAttribPointer)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
     void (*EnableVertexAttribArray)(GLuint);
     void (*DisableVertexAttribArray)(GLuint);
+    void (*GetBooleanv)(GLenum, GLboolean *);
+    void (*ColorMask)(GLboolean, GLboolean, GLboolean, GLboolean);
+    void (*BindFramebuffer)(GLenum, GLuint);
+    void (*BlendEquation)(GLenum);
+    GLenum (*GetError)();
     bool ok;
 };
 
@@ -56,7 +61,8 @@ bool loadGles()
     GLES_FN(ActiveTexture) GLES_FN(BindTexture) GLES_FN(BindBuffer) GLES_FN(BlendFuncSeparate)
     GLES_FN(BlendEquationSeparate) GLES_FN(Viewport) GLES_FN(Scissor) GLES_FN(GetVertexAttribiv)
     GLES_FN(GetVertexAttribPointerv) GLES_FN(VertexAttribPointer) GLES_FN(EnableVertexAttribArray)
-    GLES_FN(DisableVertexAttribArray)
+    GLES_FN(DisableVertexAttribArray) GLES_FN(GetBooleanv) GLES_FN(ColorMask) GLES_FN(BindFramebuffer)
+    GLES_FN(BlendEquation) GLES_FN(GetError)
 #undef GLES_FN
     gles.ok = true;
     return true;
@@ -74,7 +80,9 @@ struct FSavedState
 {
     GLint program, activeTexture, texture0, arrayBuffer, elementBuffer;
     GLint blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha, blendEqRGB, blendEqAlpha;
-    GLboolean blend, cull, depth, scissor;
+    GLboolean blend, cull, depth, scissor, stencil, alphaCoverage, polygonOffset;
+    GLboolean colorMask[4];
+    GLint framebuffer;
     GLint viewport[4], scissorBox[4];
     GLint numAttribs;
     FAttrib attribs[MAX_ATTRIBS];
@@ -102,6 +110,11 @@ void saveState()
     s.cull = gles.IsEnabled(GL_CULL_FACE);
     s.depth = gles.IsEnabled(GL_DEPTH_TEST);
     s.scissor = gles.IsEnabled(GL_SCISSOR_TEST);
+    s.stencil = gles.IsEnabled(GL_STENCIL_TEST);
+    s.alphaCoverage = gles.IsEnabled(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    s.polygonOffset = gles.IsEnabled(GL_POLYGON_OFFSET_FILL);
+    gles.GetBooleanv(GL_COLOR_WRITEMASK, s.colorMask);
+    gles.GetIntegerv(GL_FRAMEBUFFER_BINDING, &s.framebuffer);
     gles.GetIntegerv(GL_VIEWPORT, s.viewport);
     gles.GetIntegerv(GL_SCISSOR_BOX, s.scissorBox);
     gles.GetIntegerv(GL_MAX_VERTEX_ATTRIBS, &s.numAttribs);
@@ -118,6 +131,31 @@ void saveState()
         gles.GetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &a.buffer);
         gles.GetVertexAttribPointerv(i, GL_VERTEX_ATTRIB_ARRAY_POINTER, &a.pointer);
     }
+
+    static bool logged = false;
+    if (!logged)
+    {
+        logged = true;
+        LOGI("Touch overlay: engine state fb=%d scissor=%d stencil=%d depth=%d cull=%d blend=%d mask=%d%d%d%d prog=%d",
+             s.framebuffer, s.scissor, s.stencil, s.depth, s.cull, s.blend,
+             s.colorMask[0], s.colorMask[1], s.colorMask[2], s.colorMask[3], s.program);
+    }
+}
+
+// What the overlay needs and does not set itself: the window, every pixel, all channels, no stray arrays.
+void resetForOverlay()
+{
+    const FSavedState &s = saved;
+    gles.BindFramebuffer(GL_FRAMEBUFFER, 0);
+    gles.Disable(GL_SCISSOR_TEST);
+    gles.Disable(GL_STENCIL_TEST);
+    gles.Disable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    gles.Disable(GL_POLYGON_OFFSET_FILL);
+    gles.ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    gles.BlendEquation(GL_FUNC_ADD);
+    for (int i = 0; i < s.numAttribs; i++)
+        if (s.attribs[i].enabled)
+            gles.DisableVertexAttribArray(i);
 }
 
 void setEnabled(GLenum cap, GLboolean on)
@@ -153,6 +191,11 @@ void restoreState()
     setEnabled(GL_CULL_FACE, s.cull);
     setEnabled(GL_DEPTH_TEST, s.depth);
     setEnabled(GL_SCISSOR_TEST, s.scissor);
+    setEnabled(GL_STENCIL_TEST, s.stencil);
+    setEnabled(GL_SAMPLE_ALPHA_TO_COVERAGE, s.alphaCoverage);
+    setEnabled(GL_POLYGON_OFFSET_FILL, s.polygonOffset);
+    gles.ColorMask(s.colorMask[0], s.colorMask[1], s.colorMask[2], s.colorMask[3]);
+    gles.BindFramebuffer(GL_FRAMEBUFFER, s.framebuffer);
     gles.Viewport(s.viewport[0], s.viewport[1], s.viewport[2], s.viewport[3]);
     gles.Scissor(s.scissorBox[0], s.scissorBox[1], s.scissorBox[2], s.scissorBox[3]);
 }
@@ -164,7 +207,13 @@ void TouchInterface::openGLStart()
     gl4es_flush();
     stateSaved = loadGles();
     if (stateSaved)
+    {
+        // gl4es checks its own errors; drop any so the overlay's own show below.
+        while (gles.GetError() != GL_NO_ERROR)
+            ;
         saveState();
+        resetForOverlay();
+    }
     touchcontrols::gl_startRender();
 };
 
@@ -172,7 +221,16 @@ void TouchInterface::openGLEnd()
 {
     touchcontrols::gl_endRender();
     if (stateSaved)
+    {
+        static int errorsLogged = 0;
+        const GLenum error = gles.GetError();
+        if (error != GL_NO_ERROR && errorsLogged < 5)
+        {
+            errorsLogged++;
+            LOGI("Touch overlay: GL error 0x%x", error);
+        }
         restoreState();
+    }
 };
 
 void TouchInterface::mouseMove(int action, float x, float y, float mouse_x, float mouse_y)
